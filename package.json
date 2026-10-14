@@ -1,0 +1,15 @@
+{
+  "name": "route",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Conception géométrique des routes dans le navigateur, sur fond topographique DXF/DWG (ksr-infra.org)",
+  "scripts": {
+    "test": "node --test tests/core.test.js",
+    "test:all": "node --test 'tests/*.test.js'",
+    "test:ui": "node --test tests/ui.smoke.test.js",
+    "serve": "python3 -m http.server 8080 --directory web"
+  },
+  "devDependencies": { "jsdom": "^25.0.0" },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Route — conception géométrique</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand"><span class="logo">R</span><span class="title">Route</span><span class="sub">conception géométrique · ksr-infra.org</span></div>
+  <input id="projName" class="projname" value="Nouveau projet" title="Nom du projet">
+  <label class="field">Catégorie <select id="categorie"></select></label>
+  <div class="actions">
+    <button id="btnNew" title="Nouveau projet">Nouveau</button>
+    <button id="btnOpen" title="Ouvrir un projet .route.json">Ouvrir</button>
+    <button id="btnSave" title="Enregistrer le projet (.route.json)">Enregistrer</button>
+    <button id="btnImport" class="primary" title="Importer un fond topographique DXF ou DWG">Fond DXF / DWG</button>
+    <div class="menu">
+      <button id="btnExport">Exporter ▾</button>
+      <div class="menu-items">
+        <button data-export="dxfPlan">Plan (DXF)</button>
+        <button data-export="dxfPL">Profil en long (DXF)</button>
+        <button data-export="dxfPT">Profils en travers (DXF)</button>
+        <button data-export="landxml">LandXML (axe + profil + TIN)</button>
+        <button data-export="csvTab">Tabulation (CSV)</button>
+        <button data-export="csvCub">Cubatures (CSV)</button>
+      </div>
+    </div>
+    <button id="btnHelp" title="Aide">?</button>
+  </div>
+  <input type="file" id="fileDxf" accept=".dxf,.dwg" hidden>
+  <input type="file" id="fileProj" accept=".json" hidden>
+</header>
+
+<div id="layout">
+  <aside id="sidebar">
+    <nav class="side-tabs">
+      <button data-side="fond" class="active">Fond</button>
+      <button data-side="axe">Axe</button>
+      <button data-side="rasante">Rasante</button>
+      <button data-side="profil">Profil type</button>
+    </nav>
+
+    <section id="side-fond" class="side-panel active">
+      <h3>Fond topographique</h3>
+      <p id="fondInfo" class="muted">Aucun fichier. Importer un DXF (ou un DWG via le convertisseur).</p>
+      <div class="row"><label>Convertisseur DWG (URL)</label><input id="convUrl" placeholder="https://…/convert" title="Micro-service DWG→DXF (dossier converter/). Laisser vide si vous importez du DXF."></div>
+      <h4>Calques</h4>
+      <div id="layerList" class="layer-list"></div>
+      <h4>Points cotés → TIN</h4>
+      <div class="checks">
+        <label><input type="checkbox" id="rPoints" checked> POINT 3D</label>
+        <label><input type="checkbox" id="rPolys" checked> Polylignes à élévation (courbes)</label>
+        <label><input type="checkbox" id="rFaces" checked> 3DFACE</label>
+        <label><input type="checkbox" id="rBlocks" checked> Blocs à attribut Z</label>
+        <label><input type="checkbox" id="rTexts"> Textes numériques (cotes)</label>
+        <label><input type="checkbox" id="rZero"> Accepter z = 0</label>
+      </div>
+      <div class="row"><label>Filtre α (× arête médiane)</label><input type="number" id="maxEdgeFactor" value="4" min="1" step="0.5"></div>
+      <div class="row"><label>Courbes de niveau (m)</label><input type="number" id="contourStep" value="1" min="0" step="0.5"></div>
+      <button id="btnTin" class="primary">Construire le TIN</button>
+      <p id="tinInfo" class="muted"></p>
+    </section>
+
+    <section id="side-axe" class="side-panel">
+      <h3>Tracé en plan</h3>
+      <div class="row"><label>PK origine</label><input type="number" id="pk0" value="0" step="1"></div>
+      <div class="row"><label>Pas de tabulation (m)</label><input type="number" id="pasTab" value="25" min="1" step="5"></div>
+      <div class="toolbar">
+        <button id="modeAddSommet" class="toggle">＋ Sommets (clic sur le plan)</button>
+        <button id="btnClearAxe">Vider</button>
+      </div>
+      <table id="tblSommets" class="grid"><thead><tr><th>#</th><th>X</th><th>Y</th><th>R (m)</th><th>A</th><th></th></tr></thead><tbody></tbody></table>
+      <p class="hint">R et A se saisissent sur les sommets intermédiaires. A = 0 → arc simple. A = √(R·L).</p>
+      <div id="axeErrors" class="errors"></div>
+      <div id="axeControls" class="controls"></div>
+      <div id="axeElements" class="elements"></div>
+    </section>
+
+    <section id="side-rasante" class="side-panel">
+      <h3>Rasante (profil en long)</h3>
+      <div class="toolbar">
+        <button id="modeAddRas" class="toggle">＋ Sommets (clic sur le profil)</button>
+        <button id="btnRasAuto" title="Droite joignant le TN aux extrémités">Auto</button>
+        <button id="btnClearRas">Vider</button>
+      </div>
+      <table id="tblRasante" class="grid"><thead><tr><th>#</th><th>PK</th><th>Z</th><th>Rv (m)</th><th></th></tr></thead><tbody></tbody></table>
+      <p class="hint">Rv = rayon du raccordement parabolique (saillant/rentrant déduit des pentes). L = Rv·|Δi|.</p>
+      <div class="row"><label>Exagération verticale</label><input type="number" id="exag" value="10" min="1" step="1"></div>
+      <div id="rasErrors" class="errors"></div>
+      <div id="rasControls" class="controls"></div>
+    </section>
+
+    <section id="side-profil" class="side-panel">
+      <h3>Profil en travers type</h3>
+      <div class="row"><label>Demi-chaussée (m)</label><input type="number" id="ptDemi" step="0.25"></div>
+      <div class="row"><label>Pente chaussée (%)</label><input type="number" id="ptPente" step="0.5"></div>
+      <div class="row"><label>Accotement (m)</label><input type="number" id="ptAcc" step="0.25"></div>
+      <div class="row"><label>Pente accotement (%)</label><input type="number" id="ptPenteAcc" step="0.5"></div>
+      <div class="row"><label>Talus déblai (H/1V)</label><input type="number" id="ptTalD" step="0.25"></div>
+      <div class="row"><label>Talus remblai (H/1V)</label><input type="number" id="ptTalR" step="0.25"></div>
+      <div class="row"><label>Fossé</label><label class="inline"><input type="checkbox" id="ptFosse"> oui</label></div>
+      <div class="row"><label>Fossé : largeur (m)</label><input type="number" id="ptFL" step="0.1"></div>
+      <div class="row"><label>Fossé : profondeur (m)</label><input type="number" id="ptFP" step="0.1"></div>
+      <div class="row"><label>Fossé : fond (m)</label><input type="number" id="ptFF" step="0.1"></div>
+      <div class="row"><label>Emprise TN explorée (m)</label><input type="number" id="ptEmprise" step="5"></div>
+      <p class="hint">Dévers en courbe calé sur la catégorie (ARP) : plan unique vers l'intérieur ; variation linéaire dans la clothoïde.</p>
+    </section>
+  </aside>
+
+  <main id="main">
+    <nav class="main-tabs">
+      <button data-view="plan" class="active">Plan</button>
+      <button data-view="pl">Profil en long</button>
+      <button data-view="pt">Profils en travers</button>
+      <button data-view="tab">Tabulation</button>
+      <button data-view="cub">Cubatures</button>
+    </nav>
+    <section id="view-plan" class="view active">
+      <div class="canvas-wrap"><canvas id="cvPlan"></canvas>
+        <div class="overlay top-left" id="planLegend">
+          <label><input type="checkbox" id="showFond" checked> fond</label>
+          <label><input type="checkbox" id="showContours" checked> courbes TIN</label>
+          <label><input type="checkbox" id="showTin"> triangles</label>
+          <label><input type="checkbox" id="showBords" checked> bords</label>
+          <label><input type="checkbox" id="showStations" checked> stations</label>
+          <button id="btnZoomFit" title="Cadrer">⤢</button>
+        </div>
+        <div class="overlay bottom-left" id="planCoords">X — Y —</div>
+      </div>
+    </section>
+    <section id="view-pl" class="view"><div class="canvas-wrap"><canvas id="cvPL"></canvas><div class="overlay bottom-left" id="plCoords">PK — Z —</div></div></section>
+    <section id="view-pt" class="view">
+      <div class="pt-bar"><label>Profil <select id="ptSelect"></select></label><span id="ptInfo" class="muted"></span></div>
+      <div class="canvas-wrap"><canvas id="cvPT"></canvas></div>
+    </section>
+    <section id="view-tab" class="view scroll"><table id="tblTab" class="grid wide"></table></section>
+    <section id="view-cub" class="view scroll"><div id="cubSummary" class="summary"></div><table id="tblCub" class="grid wide"></table></section>
+  </main>
+</div>
+
+<div id="status"></div>
+<dialog id="helpDlg">
+  <h2>Route — aide rapide</h2>
+  <ol>
+    <li><b>Fond</b> : importer un DXF (ou un DWG si l'URL du convertisseur est renseignée). Choisir les calques et les règles d'extraction, puis <i>Construire le TIN</i>.</li>
+    <li><b>Axe</b> : activer « ＋ Sommets » et cliquer sur le plan ; saisir R (et A) sur les sommets intermédiaires. Les points KA/KE/T1/T2 et les contrôles ARP s'affichent.</li>
+    <li><b>Rasante</b> : sur le profil en long, « Auto » ou « ＋ Sommets » ; saisir Rv pour les raccordements paraboliques.</li>
+    <li><b>Profil type</b> : chaussée, accotements, talus, fossé → profils en travers, surfaces et cubatures.</li>
+    <li><b>Exporter</b> : DXF (plan, PL, PT), LandXML (Covadis, Civil 3D), CSV.</li>
+  </ol>
+  <p>Molette = zoom, glisser = déplacer, glisser un sommet = le déplacer. Le projet s'enregistre en JSON (et se mémorise dans le navigateur).</p>
+  <form method="dialog"><button>Fermer</button></form>
+</dialog>
+
+<script src="js/vendor/delaunator.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
